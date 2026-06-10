@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Last Man Standing — World Cup 2026</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Bebas+Neue&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0a0f1e;
+      color: #f0f0f0;
+      min-height: 100vh;
+    }
+    .pitch-lines {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(
+          180deg,
+          transparent 0px,
+          transparent 59px,
+          rgba(255,255,255,0.025) 60px
+        );
+    }
+    #root { position: relative; z-index: 1; }
+  </style>
+</head>
+<body>
+  <div class="pitch-lines"></div>
+  <div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+const ADMIN_PIN = "GhanaFTW2026";
+
+const WC2026_TEAMS = [
+  "Argentina","Australia","Belgium","Brazil","Cameroon","Canada","Chile",
+  "Colombia","Croatia","Denmark","Ecuador","Egypt","England","France",
+  "Germany","Ghana","Iran","Italy","Japan","Mexico","Morocco","Netherlands",
+  "New Zealand","Nigeria","Panama","Paraguay","Peru","Poland","Portugal",
+  "Qatar","Saudi Arabia","Senegal","Serbia","South Korea","Spain","Switzerland",
+  "Tunisia","United States","Uruguay","Venezuela"
+];
+
+const FLAGS = {
+  "Argentina":"🇦🇷","Australia":"🇦🇺","Belgium":"🇧🇪","Brazil":"🇧🇷","Cameroon":"🇨🇲",
+  "Canada":"🇨🇦","Chile":"🇨🇱","Colombia":"🇨🇴","Croatia":"🇭🇷","Denmark":"🇩🇰",
+  "Ecuador":"🇪🇨","Egypt":"🇪🇬","England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","France":"🇫🇷","Germany":"🇩🇪",
+  "Ghana":"🇬🇭","Iran":"🇮🇷","Italy":"🇮🇹","Japan":"🇯🇵","Mexico":"🇲🇽",
+  "Morocco":"🇲🇦","Netherlands":"🇳🇱","New Zealand":"🇳🇿","Nigeria":"🇳🇬","Panama":"🇵🇦",
+  "Paraguay":"🇵🇾","Peru":"🇵🇪","Poland":"🇵🇱","Portugal":"🇵🇹","Qatar":"🇶🇦",
+  "Saudi Arabia":"🇸🇦","Senegal":"🇸🇳","Serbia":"🇷🇸","South Korea":"🇰🇷","Spain":"🇪🇸",
+  "Switzerland":"🇨🇭","Tunisia":"🇹🇳","United States":"🇺🇸","Uruguay":"🇺🇾","Venezuela":"🇻🇪"
+};
+
+const ROUND_LABELS = ["Round 1","Round 2","Round 3","Round 4 (R16)","Round 5 (QF)","Round 6 (SF)","Round 7 (Final)"];
+
+function getInitialState() {
+  try {
+    const saved = localStorage.getItem("lms_state_v2");
+    if (saved) return JSON.parse(saved);
+  } catch(e) {}
+  return {
+    players: [],
+    rounds: [],
+    currentRound: 0,
+    gameOver: false,
+    pickDeadline: ""
+  };
+}
+
+function saveState(state) {
+  localStorage.setItem("lms_state_v2", JSON.stringify(state));
+}
+
+// ---- AUTH SCREEN ----
+function AuthScreen({ onLogin }) {
+  const [pin, setPin] = useState("");
+  const [name, setName] = useState("");
+  const [mode, setMode] = useState("player");
+  const [error, setError] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+
+  function handleSubmit() {
+    setError("");
+    if (mode === "admin") {
+      if (pin === ADMIN_PIN) {
+        onLogin({ role: "admin", name: "Nathan" });
+      } else {
+        setError("Wrong PIN. Try again.");
+      }
+    } else {
+      if (!name.trim()) { setError("Enter your name."); return; }
+      if (!inviteCode.trim()) { setError("Enter the invite code."); return; }
+      if (inviteCode.trim().toUpperCase() !== "WC2026") {
+        setError("Invalid invite code. Ask Nathan.");
+        return;
+      }
+      onLogin({ role: "player", name: name.trim() });
+    }
+  }
+
+  return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div style={{width:"100%",maxWidth:"420px"}}>
+        <div style={{textAlign:"center",marginBottom:"2rem"}}>
+          <div style={{fontSize:"64px",marginBottom:"0.5rem"}}>⚽</div>
+          <h1 style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"clamp(2.5rem,8vw,4rem)",letterSpacing:"0.04em",color:"#F5C842",lineHeight:1}}>
+            Last Man Standing
+          </h1>
+          <p style={{color:"rgba(255,255,255,0.5)",fontSize:"0.9rem",marginTop:"0.4rem",letterSpacing:"0.1em",textTransform:"uppercase"}}>
+            World Cup 2026
+          </p>
+        </div>
+
+        <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"16px",padding:"2rem"}}>
+          <div style={{display:"flex",gap:"8px",marginBottom:"1.5rem"}}>
+            {["player","admin"].map(m => (
+              <button key={m} onClick={() => { setMode(m); setError(""); }}
+                style={{flex:1,padding:"10px",borderRadius:"8px",border:"none",cursor:"pointer",fontFamily:"'Inter',sans-serif",fontWeight:500,fontSize:"0.9rem",transition:"all 0.2s",
+                  background: mode===m ? "#F5C842" : "rgba(255,255,255,0.07)",
+                  color: mode===m ? "#0a0f1e" : "rgba(255,255,255,0.6)"}}>
+                {m === "admin" ? "Admin (Nathan)" : "Player"}
+              </button>
+            ))}
+          </div>
+
+          {mode === "player" && (
+            <>
+              <div style={{marginBottom:"1rem"}}>
+                <label style={{display:"block",fontSize:"0.8rem",color:"rgba(255,255,255,0.5)",marginBottom:"6px",letterSpacing:"0.05em",textTransform:"uppercase"}}>Your name</label>
+                <input value={name} onChange={e=>setName(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+                  placeholder="e.g. Pete" autoFocus
+                  style={{width:"100%",padding:"12px",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:"8px",color:"#fff",fontSize:"1rem",fontFamily:"'Inter',sans-serif",outline:"none"}} />
+              </div>
+              <div style={{marginBottom:"1rem"}}>
+                <label style={{display:"block",fontSize:"0.8rem",color:"rgba(255,255,255,0.5)",marginBottom:"6px",letterSpacing:"0.05em",textTransform:"uppercase"}}>Invite code</label>
+                <input value={inviteCode} onChange={e=>setInviteCode(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+                  placeholder="Ask Nathan for this"
+                  style={{width:"100%",padding:"12px",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:"8px",color:"#fff",fontSize:"1rem",fontFamily:"'Inter',sans-serif",outline:"none"}} />
+              </div>
+            </>
+          )}
+
+          {mode === "admin" && (
+            <div style={{marginBottom:"1rem"}}>
+              <label style={{display:"block",fontSize:"0.8rem",color:"rgba(255,255,255,0.5)",marginBottom:"6px",letterSpacing:"0.05em",textTransform:"uppercase"}}>Admin PIN</label>
+              <input type="password" value={pin} onChange={e=>setPin(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+                placeholder="••••••••••" autoFocus
+                style={{width:"100%",padding:"12px",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:"8px",color:"#fff",fontSize:"1rem",fontFamily:"'Inter',sans-serif",outline:"none"}} />
+            </div>
+          )}
+
+          {error && <p style={{color:"#ff6b6b",fontSize:"0.85rem",marginBottom:"1rem"}}>{error}</p>}
+
+          <button onClick={handleSubmit}
+            style={{width:"100%",padding:"14px",background:"#F5C842",color:"#0a0f1e",border:"none",borderRadius:"8px",fontWeight:700,fontSize:"1rem",fontFamily:"'Inter',sans-serif",cursor:"pointer",letterSpacing:"0.03em"}}>
+            {mode === "admin" ? "Enter as Admin" : "Join the game →"}
+          </button>
+        </div>
+
+        <p style={{textAlign:"center",fontSize:"0.75rem",color:"rgba(255,255,255,0.3)",marginTop:"1.5rem"}}>
+          All disputes handled by Nathan. His word is final.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---- PLAYER VIEW ----
+function PlayerView({ user, state, onPick }) {
+  const [selected, setSelected] = useState(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const player = state.players.find(p => p.name.toLowerCase() === user.name.toLowerCase());
+  const currentRound = state.currentRound;
+  const roundData = state.rounds[currentRound] || null;
+
+  const isEliminated = player && player.eliminatedRound !== undefined && player.eliminatedRound !== null;
+  const hasPicked = player && roundData && roundData.picks && roundData.picks[player.name];
+  const usedTeams = player ? (player.usedTeams || []) : [];
+  const myPick = hasPicked ? roundData.picks[player.name] : null;
+  const picksRevealed = roundData && roundData.picksRevealed;
+
+  const availableTeams = WC2026_TEAMS.filter(t => !usedTeams.includes(t));
+  const filteredTeams = availableTeams.filter(t => t.toLowerCase().includes(search.toLowerCase()));
+
+  function handlePick() {
+    if (!selected) return;
+    onPick(user.name, selected);
+    setConfirmed(true);
+  }
+
+  if (!player) {
+    return (
+      <div style={{padding:"2rem",textAlign:"center"}}>
+        <p style={{color:"rgba(255,255,255,0.5)",marginBottom:"1rem"}}>You're not registered yet.</p>
+        <p style={{color:"rgba(255,255,255,0.4)",fontSize:"0.85rem"}}>Ask Nathan to add you to the game.</p>
+      </div>
+    );
+  }
+
+  if (isEliminated) {
+    return (
+      <div style={{padding:"2rem",textAlign:"center"}}>
+        <div style={{fontSize:"4rem",marginBottom:"1rem"}}>💀</div>
+        <h2 style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"2rem",color:"#ff6b6b",marginBottom:"0.5rem"}}>You're out</h2>
+        <p style={{color:"rgba(255,255,255,0.5)"}}>Eliminated in Round {player.eliminatedRound + 1}</p>
+        <p style={{color:"rgba(255,255,255,0.3)",fontSize:"0.85rem",marginTop:"1rem"}}>Better luck next time. Watch the leaderboard below.</p>
+        <Leaderboard state={state} highlight={user.name} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{padding:"1.5rem",maxWidth:"600px",margin:"0 auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.5rem"}}>
+        <div>
+          <h2 style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"1.8rem",color:"#F5C842",letterSpacing:"0.05em"}}>{ROUND_LABELS[currentRound] || `Round ${currentRound+1}`}</h2>
+          {state.pickDeadline && <p style={{color:"rgba(255,255,255,0.4)",fontSize:"0.8rem"}}>Deadline: {state.pickDeadline}</p>}
+        </div>
+        <div style={{textAlign:"right"}}>
+          <p style={{fontWeight:600,fontSize:"1.1rem"}}>{user.name}</p>
+          <p style={{color:"rgba(255,255,255,0.4)",fontSize:"0.8rem"}}>{usedTeams.length} teams used</p>
+        </div>
+      </div>
+
+      {hasPicked ? (
+        <div style={{background:"rgba(245,200,66,0.1)",border:"1px solid rgba(245,200,66,0.3)",borderRadius:"12px",padding:"1.5rem",textAlign:"center",marginBottom:"1.5rem"}}>
+          <p style={{color:"rgba(255,255,255,0.5)",fontSize:"0.8rem",marginBottom:"0.5rem",textTransform:"uppercase",letterSpacing:"0.1em"}}>Your pick this round</p>
+          {picksRevealed ? (
+            <>
+              <div style={{fontSize:"2.5rem"}}>{FLAGS[myPick] || "🏳"}</div>
+              <p style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"1.8rem",color:"#F5C842",letterSpacing:"0.05em"}}>{myPick}</p>
+            </>
+          ) : (
+            <>
+              <div style={{fontSize:"2.5rem"}}>🔒</div>
+              <p style={{color:"rgba(255,255,255,0.5)",marginTop:"0.5rem"}}>Pick locked in. Revealed after deadline.</p>
+            </>
+          )}
+        </div>
+      ) : roundData && roundData.resultsIn ? (
+        <div style={{background:"rgba(255,107,107,0.1)",border:"1px solid rgba(255,107,107,0.3)",borderRadius:"12px",padding:"1.5rem",textAlign:"center",marginBottom:"1.5rem"}}>
+          <p style={{color:"#ff6b6b"}}>Picking is closed for this round.</p>
+        </div>
+      ) : (
+        <>
+          <p style={{color:"rgba(255,255,255,0.5)",fontSize:"0.85rem",marginBottom:"1rem"}}>Pick one team to win. You can't pick teams you've already used.</p>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search teams..."
+            style={{width:"100%",padding:"10px 14px",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:"8px",color:"#fff",fontSize:"0.9rem",fontFamily:"'Inter',sans-serif",outline:"none",marginBottom:"1rem"}} />
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:"8px",maxHeight:"320px",overflowY:"auto",paddingRight:"4px",marginBottom:"1.5rem"}}>
+            {filteredTeams.map(team => (
+              <button key={team} onClick={() => setSelected(team)}
+                style={{padding:"10px 8px",borderRadius:"8px",border: selected===team ? "2px solid #F5C842" : "1px solid rgba(255,255,255,0.1)",background: selected===team ? "rgba(245,200,66,0.12)" : "rgba(255,255,255,0.04)",color: selected===team ? "#F5C842" : "#fff",cursor:"pointer",fontFamily:"'Inter',sans-serif",fontSize:"0.85rem",textAlign:"left",display:"flex",alignItems:"center",gap:"8px",transition:"all 0.15s"}}>
+                <span style={{fontSize:"1.2rem"}}>{FLAGS[team]||"🏳"}</span>
+                <span>{team}</span>
+              </button>
+            ))}
+            {filteredTeams.length === 0 && <p style={{color:"rgba(255,255,255,0.3)",gridColumn:"1/-1",padding:"1rem",textAlign:"center"}}>No teams found</p>}
+          </div>
+
+          {selected && (
+            <div style={{background:"rgba(245,200,66,0.08)",border:"1px solid rgba(245,200,66,0.25)",borderRadius:"12px",padding:"1rem",marginBottom:"1rem",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                <span style={{fontSize:"1.8rem"}}>{FLAGS[selected]}</span>
+                <div>
+                  <p style={{fontSize:"0.75rem",color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Selected</p>
+                  <p style={{fontWeight:600,color:"#F5C842"}}>{selected}</p>
+                </div>
+              </div>
+              <button onClick={handlePick}
+                style={{padding:"10px 20px",background:"#F5C842",color:"#0a0f1e",border:"none",borderRadius:"8px",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif",fontSize:"0.9rem"}}>
+                Lock it in ✓
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {usedTeams.length > 0 && (
+        <div style={{marginTop:"1.5rem"}}>
+          <p style={{color:"rgba(255,255,255,0.3)",fontSize:"0.75rem",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:"8px"}}>Teams you've already used</p>
+          <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
+            {usedTeams.map(t => (
+              <span key={t} style={{padding:"4px 10px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:"20px",fontSize:"0.78rem",color:"rgba(255,255,255,0.3)"}}>
+                {FLAGS[t]} {t}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <Leaderboard state={state} highlight={user.name} />
+    </div>
+  );
+}
+
+// ---- LEADERBOARD ----
+function Leaderboard({ state, highlight }) {
+  const alive = state.players.filter(p => p.eliminatedRound === null || p.eliminatedRound === undefined);
+  const dead = state.players.filter(p => p.eliminatedRound !== null && p.eliminatedRound !== undefined)
+    .sort((a,b) => b.eliminatedRound - a.eliminatedRound);
+
+  const pot = state.players.length * 5;
+
+  return (
+    <div style={{marginTop:"2rem"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem"}}>
+        <h3 style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"1.4rem",letterSpacing:"0.05em",color:"rgba(255,255,255,0.8)"}}>Standings</h3>
+        <div style={{background:"rgba(245,200,66,0.1)",border:"1px solid rgba(245,200,66,0.25)",borderRadius:"8px",padding:"6px 14px"}}>
+          <span style={{fontSize:"0.75rem",color:"rgba(255,255,255,0.4)",marginRight:"6px"}}>POT</span>
+          <span style={{fontWeight:700,color:"#F5C842"}}>£{pot}</span>
+        </div>
+      </div>
+
+      {alive.length === 0 && <p style={{color:"rgba(255,255,255,0.3)",fontSize:"0.85rem"}}>No players yet.</p>}
+
+      {alive.map((p,i) => (
+        <div key={p.name} style={{display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px",background: p.name===highlight ? "rgba(245,200,66,0.07)" : "rgba(255,255,255,0.03)",border: p.name===highlight ? "1px solid rgba(245,200,66,0.2)" : "1px solid rgba(255,255,255,0.05)",borderRadius:"10px",marginBottom:"6px"}}>
+          <span style={{fontSize:"1.1rem",minWidth:"24px",textAlign:"center"}}>{i===0?"🏆":i===1?"🥈":i===2?"🥉":"⚽"}</span>
+          <span style={{flex:1,fontWeight: p.name===highlight ? 600 : 400, color: p.name===highlight ? "#F5C842":"#fff"}}>{p.name}</span>
+          <span style={{fontSize:"0.75rem",color:"rgba(255,255,255,0.3)"}}>Still in</span>
+        </div>
+      ))}
+
+      {dead.length > 0 && (
+        <>
+          <p style={{color:"rgba(255,255,255,0.2)",fontSize:"0.75rem",textTransform:"uppercase",letterSpacing:"0.1em",margin:"1rem 0 8px"}}>Eliminated</p>
+          {dead.map(p => (
+            <div key={p.name} style={{display:"flex",alignItems:"center",gap:"12px",padding:"8px 14px",opacity:0.4,marginBottom:"4px"}}>
+              <span style={{fontSize:"1rem"}}>💀</span>
+              <span style={{flex:1,fontSize:"0.9rem",textDecoration:"line-through"}}>{p.name}</span>
+              <span style={{fontSize:"0.75rem",color:"rgba(255,255,255,0.3)"}}>Out R{(p.eliminatedRound||0)+1}</span>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---- ADMIN VIEW ----
+function AdminView({ state, onStateChange }) {
+  const [tab, setTab] = useState("players");
+  const [newName, setNewName] = useState("");
+  const [newDeadline, setNewDeadline] = useState(state.pickDeadline || "");
+  const [resultTeam, setResultTeam] = useState("");
+  const [resultOutcome, setResultOutcome] = useState("win");
+  const [msg, setMsg] = useState("");
+
+  function flash(m) { setMsg(m); setTimeout(()=>setMsg(""),3000); }
+
+  function addPlayer() {
+    if (!newName.trim()) return;
+    if (state.players.find(p=>p.name.toLowerCase()===newName.trim().toLowerCase())) {
+      flash("Player already exists"); return;
+    }
+    const ns = {...state, players:[...state.players, {name:newName.trim(), usedTeams:[], eliminatedRound:null, paid:[]}]};
+    onStateChange(ns); setNewName(""); flash(`Added ${newName.trim()}`);
+  }
+
+  function removePlayer(name) {
+    if (!confirm(`Remove ${name}?`)) return;
+    const ns = {...state, players: state.players.filter(p=>p.name!==name)};
+    onStateChange(ns); flash(`Removed ${name}`);
+  }
+
+  function startRound() {
+    const newRound = { picks: {}, picksRevealed: false, results: {}, resultsIn: false };
+    const ns = {...state, rounds:[...state.rounds, newRound], currentRound: state.rounds.length, pickDeadline: newDeadline};
+    onStateChange(ns); flash("New round started!");
+  }
+
+  function revealPicks() {
+    const rounds = [...state.rounds];
+    rounds[state.currentRound] = {...rounds[state.currentRound], picksRevealed: true};
+    onStateChange({...state, rounds});
+    flash("Picks revealed to all players!");
+  }
+
+  function addResult() {
+    if (!resultTeam) return;
+    const rounds = [...state.rounds];
+    const r = {...rounds[state.currentRound]};
+    r.results = {...r.results, [resultTeam]: resultOutcome};
+    rounds[state.currentRound] = r;
+    onStateChange({...state, rounds});
+    flash(`${resultTeam}: ${resultOutcome}`);
+    setResultTeam("");
+  }
+
+  function processResults() {
+    const round = state.rounds[state.currentRound];
+    if (!round) return;
+    const rounds = [...state.rounds];
+    rounds[state.currentRound] = {...rounds[state.currentRound], resultsIn: true};
+
+    const players = state.players.map(p => {
+      if (p.eliminatedRound !== null && p.eliminatedRound !== undefined) return p;
+      const pick = round.picks[p.name];
+      if (!pick) {
+        return {...p, eliminatedRound: state.currentRound};
+      }
+      const outcome = round.results[pick];
+      if (outcome === "win") {
+        return {...p, usedTeams:[...p.usedTeams, pick]};
+      } else {
+        return {...p, usedTeams:[...p.usedTeams, pick], eliminatedRound: state.currentRound};
+      }
+    });
+
+    const alive = players.filter(p => p.eliminatedRound === null || p.eliminatedRound === undefined);
+    const justElim = players.filter(p => p.eliminatedRound === state.currentRound);
+
+    let gameOver = false;
+    let msg2 = "";
+    if (alive.length === 1) { gameOver = true; msg2 = `🏆 ${alive[0].name} wins!`; }
+    else if (alive.length === 0 && justElim.length === 2) { msg2 = "Both remaining players eliminated — split the pot!"; gameOver = true; }
+    else if (alive.length === 0 && justElim.length >= 3) { msg2 = "ROLLOVER! 3+ eliminated last — everyone buys back in!"; }
+    else if (alive.length > 0) { msg2 = `${alive.length} players progress to Round ${state.currentRound+2}`; }
+
+    onStateChange({...state, rounds, players, gameOver});
+    flash(msg2 || "Results processed!");
+  }
+
+  function markPaid(playerName, roundIdx) {
+    const players = state.players.map(p => {
+      if (p.name !== playerName) return p;
+      const paid = p.paid || [];
+      const newPaid = paid.includes(roundIdx) ? paid.filter(r=>r!==roundIdx) : [...paid, roundIdx];
+      return {...p, paid: newPaid};
+    });
+    onStateChange({...state, players});
+  }
+
+  const round = state.rounds[state.currentRound];
+  const alive = state.players.filter(p => p.eliminatedRound === null || p.eliminatedRound === undefined);
+
+  const TABS = [
+    {id:"players", label:"Players"},
+    {id:"picks", label:"Picks"},
+    {id:"results", label:"Results"},
+    {id:"payments", label:"Payments"},
+  ];
+
+  return (
+    <div style={{padding:"1.5rem",maxWidth:"700px",margin:"0 auto"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1.5rem"}}>
+        <h2 style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"2rem",color:"#F5C842",letterSpacing:"0.05em"}}>Admin Panel</h2>
+        <div style={{textAlign:"right"}}>
+          <p style={{fontSize:"0.8rem",color:"rgba(255,255,255,0.4)"}}>Round {state.currentRound + 1}</p>
+          <p style={{fontSize:"0.8rem",color:"rgba(255,255,255,0.4)"}}>{alive.length} still in · £{state.players.length * 5} pot</p>
+        </div>
+      </div>
+
+      {msg && <div style={{background:"rgba(245,200,66,0.1)",border:"1px solid rgba(245,200,66,0.3)",borderRadius:"8px",padding:"10px 16px",marginBottom:"1rem",fontSize:"0.9rem",color:"#F5C842"}}>{msg}</div>}
+
+      <div style={{display:"flex",gap:"6px",marginBottom:"1.5rem",borderBottom:"1px solid rgba(255,255,255,0.08)",paddingBottom:"0"}}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            style={{padding:"8px 16px",background:"none",border:"none",cursor:"pointer",fontFamily:"'Inter',sans-serif",fontSize:"0.85rem",fontWeight: tab===t.id ? 600 : 400,color: tab===t.id ? "#F5C842" : "rgba(255,255,255,0.4)",borderBottom: tab===t.id ? "2px solid #F5C842" : "2px solid transparent",marginBottom:"-1px",transition:"all 0.15s"}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "players" && (
+        <div>
+          <div style={{display:"flex",gap:"8px",marginBottom:"1.5rem"}}>
+            <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addPlayer()} placeholder="Player name"
+              style={{flex:1,padding:"10px",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:"8px",color:"#fff",fontFamily:"'Inter',sans-serif",outline:"none"}} />
+            <button onClick={addPlayer}
+              style={{padding:"10px 20px",background:"#F5C842",color:"#0a0f1e",border:"none",borderRadius:"8px",fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>
+              Add
+            </button>
+          </div>
+
+          {state.players.map(p => {
+            const isOut = p.eliminatedRound !== null && p.eliminatedRound !== undefined;
+            return (
+              <div key={p.name} style={{display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:"10px",marginBottom:"6px",opacity: isOut ? 0.5 : 1}}>
+                <span style={{fontSize:"1rem"}}>{isOut ? "💀" : "⚽"}</span>
+                <span style={{flex:1,fontWeight:500}}>{p.name}</span>
+                {isOut && <span style={{fontSize:"0.75rem",color:"rgba(255,255,255,0.3)"}}>Out R{p.eliminatedRound+1}</span>}
+                <button onClick={()=>removePlayer(p.name)}
+                  style={{padding:"4px 10px",background:"rgba(255,107,107,0.1)",border:"1px solid rgba(255,107,107,0.2)",borderRadius:"6px",color:"#ff6b6b",cursor:"pointer",fontSize:"0.75rem",fontFamily:"'Inter',sans-serif"}}>
+                  Remove
+                </button>
+              </div>
+            );
+          })}
+
+          <div style={{marginTop:"1.5rem",padding:"1rem",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:"10px"}}>
+            <p style={{fontSize:"0.8rem",color:"rgba(255,255,255,0.4)",marginBottom:"8px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Round controls</p>
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+              <input value={newDeadline} onChange={e=>setNewDeadline(e.target.value)} placeholder="Deadline (e.g. 8pm Fri 13 Jun)"
+                style={{flex:1,minWidth:"180px",padding:"8px",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:"6px",color:"#fff",fontFamily:"'Inter',sans-serif",fontSize:"0.85rem",outline:"none"}} />
+              <button onClick={startRound} style={{padding:"8px 16px",background:"rgba(245,200,66,0.15)",border:"1px solid rgba(245,200,66,0.3)",borderRadius:"6px",color:"#F5C842",cursor:"pointer",fontFamily:"'Inter',sans-serif",fontWeight:600,fontSize:"0.85rem"}}>
+                Start New Round
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "picks" && (
+        <div>
+          {!round ? <p style={{color:"rgba(255,255,255,0.4)"}}>Start a round first.</p> : (
+            <>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem"}}>
+                <p style={{color:"rgba(255,255,255,0.5)",fontSize:"0.85rem"}}>{Object.keys(round.picks).length} / {alive.length} picks in</p>
+                <button onClick={revealPicks}
+                  style={{padding:"8px 16px",background: round.picksRevealed ? "rgba(255,255,255,0.05)" : "rgba(245,200,66,0.15)",border:"1px solid rgba(245,200,66,0.3)",borderRadius:"6px",color: round.picksRevealed ? "rgba(255,255,255,0.4)" : "#F5C842",cursor:"pointer",fontFamily:"'Inter',sans-serif",fontWeight:600,fontSize:"0.85rem"}}>
+                  {round.picksRevealed ? "✓ Picks Revealed" : "Reveal Picks to All"}
+                </button>
+              </div>
+
+              {state.players.filter(p=>p.eliminatedRound===null||p.eliminatedRound===undefined).map(p => {
+                const pick = round.picks[p.name];
+                return (
+                  <div key={p.name} style={{display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:"10px",marginBottom:"6px"}}>
+                    <span style={{flex:1,fontWeight:500}}>{p.name}</span>
+                    {pick ? (
+                      <span style={{color:"#F5C842",fontWeight:600}}>{FLAGS[pick]} {pick}</span>
+                    ) : (
+                      <span style={{color:"rgba(255,107,107,0.6)",fontSize:"0.85rem"}}>No pick yet</span>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+
+      {tab === "results" && (
+        <div>
+          {!round ? <p style={{color:"rgba(255,255,255,0.4)"}}>Start a round first.</p> : (
+            <>
+              <div style={{display:"flex",gap:"8px",marginBottom:"1.5rem",flexWrap:"wrap"}}>
+                <select value={resultTeam} onChange={e=>setResultTeam(e.target.value)}
+                  style={{flex:2,minWidth:"160px",padding:"10px",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:"8px",color: resultTeam ? "#fff" : "rgba(255,255,255,0.3)",fontFamily:"'Inter',sans-serif",outline:"none"}}>
+                  <option value="">Select team</option>
+                  {WC2026_TEAMS.map(t=><option key={t} value={t} style={{background:"#1a1a2e"}}>{FLAGS[t]} {t}</option>)}
+                </select>
+                <select value={resultOutcome} onChange={e=>setResultOutcome(e.target.value)}
+                  style={{flex:1,padding:"10px",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:"8px",color:"#fff",fontFamily:"'Inter',sans-serif",outline:"none"}}>
+                  <option value="win" style={{background:"#1a1a2e"}}>Win ✓</option>
+                  <option value="draw" style={{background:"#1a1a2e"}}>Draw —</option>
+                  <option value="loss" style={{background:"#1a1a2e"}}>Loss ✗</option>
+                </select>
+                <button onClick={addResult}
+                  style={{padding:"10px 16px",background:"rgba(245,200,66,0.15)",border:"1px solid rgba(245,200,66,0.3)",borderRadius:"8px",color:"#F5C842",cursor:"pointer",fontFamily:"'Inter',sans-serif",fontWeight:600}}>
+                  Add
+                </button>
+              </div>
+
+              {Object.entries(round.results).length > 0 && (
+                <div style={{marginBottom:"1.5rem"}}>
+                  {Object.entries(round.results).map(([team, outcome]) => (
+                    <div key={team} style={{display:"flex",alignItems:"center",gap:"12px",padding:"8px 14px",background:"rgba(255,255,255,0.03)",borderRadius:"8px",marginBottom:"4px"}}>
+                      <span>{FLAGS[team]}</span>
+                      <span style={{flex:1,fontSize:"0.9rem"}}>{team}</span>
+                      <span style={{padding:"3px 10px",borderRadius:"20px",fontSize:"0.78rem",fontWeight:600,
+                        background: outcome==="win" ? "rgba(52,211,153,0.15)" : outcome==="draw" ? "rgba(251,191,36,0.15)" : "rgba(255,107,107,0.15)",
+                        color: outcome==="win" ? "#34d399" : outcome==="draw" ? "#fbbf24" : "#ff6b6b"}}>
+                        {outcome}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!round.resultsIn && (
+                <button onClick={processResults}
+                  style={{width:"100%",padding:"14px",background:"#F5C842",color:"#0a0f1e",border:"none",borderRadius:"8px",fontWeight:700,fontSize:"1rem",fontFamily:"'Inter',sans-serif",cursor:"pointer"}}>
+                  Process Results & Eliminate Players
+                </button>
+              )}
+              {round.resultsIn && <p style={{color:"rgba(52,211,153,0.8)",textAlign:"center",fontWeight:600}}>✓ Results processed</p>}
+            </>
+          )}
+        </div>
+      )}
+
+      {tab === "payments" && (
+        <div>
+          <p style={{color:"rgba(255,255,255,0.4)",fontSize:"0.85rem",marginBottom:"1rem"}}>Mark who has paid £5 per round. Pot: £{state.players.length * 5}</p>
+          {state.players.map(p => (
+            <div key={p.name} style={{padding:"10px 14px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:"10px",marginBottom:"6px"}}>
+              <p style={{fontWeight:500,marginBottom:"8px"}}>{p.name}</p>
+              <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                {Array.from({length: state.rounds.length || 1}, (_,i) => {
+                  const paid = (p.paid||[]).includes(i);
+                  return (
+                    <button key={i} onClick={()=>markPaid(p.name,i)}
+                      style={{padding:"4px 12px",borderRadius:"20px",border:"none",cursor:"pointer",fontFamily:"'Inter',sans-serif",fontSize:"0.78rem",fontWeight:600,transition:"all 0.15s",
+                        background: paid ? "rgba(52,211,153,0.2)" : "rgba(255,107,107,0.15)",
+                        color: paid ? "#34d399" : "#ff6b6b"}}>
+                      R{i+1} {paid ? "✓ Paid" : "✗ Unpaid"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Leaderboard state={state} />
+    </div>
+  );
+}
+
+// ---- ROOT ----
+function App() {
+  const [user, setUser] = useState(null);
+  const [state, setState] = useState(getInitialState);
+
+  function updateState(ns) {
+    setState(ns);
+    saveState(ns);
+  }
+
+  function handlePick(playerName, team) {
+    const rounds = [...state.rounds];
+    if (!rounds[state.currentRound]) return;
+    rounds[state.currentRound] = {
+      ...rounds[state.currentRound],
+      picks: {...rounds[state.currentRound].picks, [playerName]: team}
+    };
+    updateState({...state, rounds});
+  }
+
+  function handleLogout() { setUser(null); }
+
+  if (!user) return <AuthScreen onLogin={setUser} />;
+
+  return (
+    <div style={{minHeight:"100vh"}}>
+      <header style={{borderBottom:"1px solid rgba(255,255,255,0.07)",padding:"1rem 1.5rem",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+          <span style={{fontSize:"1.2rem"}}>⚽</span>
+          <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"1.3rem",color:"#F5C842",letterSpacing:"0.05em"}}>Last Man Standing</span>
+          <span style={{fontSize:"0.75rem",color:"rgba(255,255,255,0.25)",display:"none"}}>WC2026</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+          <span style={{fontSize:"0.85rem",color:"rgba(255,255,255,0.4)"}}>
+            {user.role === "admin" ? "👑 " : ""}{user.name}
+          </span>
+          <button onClick={handleLogout}
+            style={{padding:"5px 12px",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"6px",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:"0.8rem",fontFamily:"'Inter',sans-serif"}}>
+            Leave
+          </button>
+        </div>
+      </header>
+
+      {user.role === "admin"
+        ? <AdminView state={state} onStateChange={updateState} />
+        : <PlayerView user={user} state={state} onPick={handlePick} />
+      }
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
